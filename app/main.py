@@ -17,6 +17,16 @@
                                            3' 端最后两位强制匹配），枚举相向且结合区
                                            不重叠的位点对，线性不越界、环形可跨原点
                                            但不超过一圈（不落库）
+    POST /digests/{id}/orfs                只读检索开放阅读框：基于已保存记录的
+                                           原始 IUPAC 序列与拓扑（不依赖酶切片段），
+                                           正链与反向互补链分别逐碱基寻找字面量 ATG，
+                                           按三联体读取至同框第一个字面量
+                                           TAA/TAG/TGA（含简并符号的密码子不充当
+                                           起止信号）；线性不越界、环形可跨原点但
+                                           完整 ORF（含终止密码子）不超过一圈；
+                                           保留满足最短氨基酸数的所有嵌套 ORF，
+                                           返回链方向、正链坐标边界、跨原点标记、
+                                           定向序列与氨基酸长度（不落库）
     POST /gel-comparisons                只读比较 2~8 条已保存记录的凝胶条带：汇总片段
                                            长度按降序聚类，返回条带范围、各泳道片段数、
                                            总碱基数与诊断条带（不落库）
@@ -56,6 +66,7 @@ from .gccontent import gc_content_windows
 from .gel import compare_gel_lanes
 from .ligation import find_compatible_pairs
 from .methylation import analyze_methylation
+from .orfs import find_orfs
 from .panel import plan_enzyme_panel
 from .pcr import predict_pcr_products
 from .schemas import (
@@ -75,6 +86,8 @@ from .schemas import (
     LigationCompatibilityResponse,
     MethylationAnalysisRequest,
     MethylationAnalysisResponse,
+    OrfSearchRequest,
+    OrfSearchResponse,
     PartialDigestDistributionResponse,
     PartialDigestRequest,
     PcrProductsRequest,
@@ -99,7 +112,8 @@ app = FastAPI(
     version="1.0.0",
     description="DNA 限制性酶切模拟：支持线性/环形序列、IUPAC 简并碱基、"
                 "双链切口偏移、黏端/平端分析与片段生成；另提供只读的"
-                "固定窗口 GC 含量范围（简并碱基上下界）计算。",
+                "固定窗口 GC 含量范围（简并碱基上下界）计算与开放阅读框"
+                "（ORF）检索。",
     lifespan=lifespan,
 )
 
@@ -404,6 +418,25 @@ def pcr_products(submission_id: int, request: PcrProductsRequest) -> dict:
         "max_product_length": request.max_product_length,
         "product_count": len(products),
         "products": products,
+    }
+
+
+@app.post("/digests/{submission_id}/orfs", response_model=OrfSearchResponse)
+def find_open_reading_frames(submission_id: int, request: OrfSearchRequest) -> dict:
+    # 先确认记录存在：不存在返回 404，且不泄露任何校验细节
+    record = db.get_submission(submission_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail=f"submission {submission_id} not found")
+
+    # 纯内存检索：只读记录的原始序列与拓扑，不引用酶切片段，数据库不做任何写入
+    orfs = find_orfs(record["sequence"], record["topology"], request.min_aa_length)
+    return {
+        "id": record["id"],
+        "topology": record["topology"],
+        "sequence_length": len(record["sequence"]),
+        "min_aa_length": request.min_aa_length,
+        "orf_count": len(orfs),
+        "orfs": orfs,
     }
 
 
