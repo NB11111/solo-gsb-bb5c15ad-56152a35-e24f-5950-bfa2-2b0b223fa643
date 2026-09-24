@@ -734,6 +734,53 @@ class PcrProductsResponse(BaseModel):
     products: list[PcrProductOut]
 
 
+# ---------- 开放阅读框（ORF）检索 ----------
+
+
+class OrfSearchRequest(BaseModel):
+    """开放阅读框检索请求：最短氨基酸数（不含终止密码子）。
+
+    纯只读计算，读取已保存记录的原始序列与拓扑，不引用酶切片段、不写库。
+    ``min_aa_length`` 为正整数；无任何依赖记录内容的校验，记录不存在
+    时先返回 404。
+    """
+
+    min_aa_length: int = Field(
+        ge=1, description="最短氨基酸数（不含终止密码子，含起始甲硫氨酸）",
+        examples=[20],
+    )
+
+
+class OrfOut(BaseModel):
+    """一个开放阅读框：链方向、top 链坐标、定向序列与长度。
+
+    ``start`` / ``end`` 为该 ORF 在 top 链（原始正链）上覆盖区间的
+    0-based 半开端点；环形跨原点时 ``end`` 为取模后的坐标（可能小于
+    ``start``）且 ``wraps_origin`` 为 true。``sequence`` 为 ORF 自身
+    5'->3' 的定向核苷酸序列（含终止密码子）；``length`` 为其核苷酸
+    长度；``aa_length`` 为氨基酸数（不含终止）。
+    """
+
+    strand: Literal["+", "-"]
+    start: int
+    end: int
+    wraps_origin: bool
+    sequence: str
+    length: int
+    aa_length: int
+
+
+class OrfSearchResponse(BaseModel):
+    """ORF 检索结果：按（链方向、起点、长度）稳定排序，无结果时为空数组。"""
+
+    id: int
+    topology: Literal["linear", "circular"]
+    sequence_length: int
+    min_aa_length: int
+    orf_count: int
+    orfs: list[OrfOut]
+
+
 # ---------- 固定窗口 GC 含量范围 ----------
 
 
